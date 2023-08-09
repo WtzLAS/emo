@@ -1,7 +1,7 @@
 package model.emo
 
 import model.*
-import zio.*
+import zio.ZIO
 
 case class RatedMatch(
     id: Long,

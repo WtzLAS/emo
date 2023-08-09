@@ -1,10 +1,9 @@
 package model.mmr
 
-import scala.math
 import util.solveItp
-import zio.*
-import java.util.concurrent.ConcurrentHashMap
-import scala.jdk.CollectionConverters.*
+import zio.ZIO
+
+import scala.math
 
 inline val TANH_MULTIPLIER = math.Pi / 1.7320508075688772
 
@@ -113,48 +112,10 @@ object EloMmrParameters:
   def default =
     EloMmrParameters(80.0, 1.0, 1500.0, 350.0, Int.MaxValue - 1, 0.2)
 
-trait EloMmrStorage:
-  def loadPlayer(id: Long): ZIO[Any, Throwable, Option[Player]]
-  def savePlayer(player: Player): ZIO[Any, Throwable, Unit]
-  def loadAllPlayers: ZIO[Any, Throwable, Vector[Player]]
-
-object EloMmrStorage:
-  def loadPlayer(id: Long): ZIO[EloMmrStorage, Throwable, Option[Player]] =
-    ZIO.serviceWithZIO[EloMmrStorage](_.loadPlayer(id))
-
-  def savePlayer(player: Player): ZIO[EloMmrStorage, Throwable, Unit] =
-    ZIO.serviceWithZIO[EloMmrStorage](_.savePlayer(player))
-
-  def loadAllPlayers: ZIO[EloMmrStorage, Throwable, Vector[Player]] =
-    ZIO.serviceWithZIO[EloMmrStorage](_.loadAllPlayers)
-
-class ConcurrentMapStorage(
-    inner: scala.collection.concurrent.Map[Long, Player]
-) extends EloMmrStorage:
-  override def loadPlayer(id: Long): ZIO[Any, Throwable, Option[Player]] =
-    ZIO.attempt(inner.get(id))
-
-  override def savePlayer(player: Player): ZIO[Any, Throwable, Unit] =
-    ZIO.attempt(
-      inner
-        .putIfAbsent(player.id, player)
-        .fold(())(_ => inner.replace(player.id, player))
-    )
-
-  override def loadAllPlayers: ZIO[Any, Throwable, Vector[Player]] =
-    ZIO.attempt(
-      inner.toVector.map(e => e(1))
-    )
-
-object ConcurrentMapStorage:
-  def layer: ZLayer[Any, Throwable, ConcurrentMapStorage] = ZLayer {
-    ZIO.attempt(ConcurrentMapStorage(ConcurrentHashMap[Long, Player]().asScala))
-  }
-
 object EloMmr:
   def updateRound(using
       params: EloMmrParameters
-  )(scores: Map[Long, Long], contestWeight: Double) = {
+  )(scores: Map[Long, Long], contestWeight: Double) =
     val (sigPerf, sigDrift) = params.sigPerfAndDrift(contestWeight)
     for {
       players1 <- ZIO
@@ -192,7 +153,7 @@ object EloMmr:
               .toVector
               .map(players1(_).approxPosterior.withNoise(sigPerf).toTanhTerm)
 
-            def f(x: Double): Double = {
+            def f(x: Double): Double =
               wins
                 .map(_.evalGreater(x))
                 .sum
@@ -202,11 +163,8 @@ object EloMmr:
                 + loses
                   .map(_.evalLess(x))
                   .sum
-            }
 
-            if (selfId == 1) {
-              pprint.pprintln(f(1500.0))
-            }
+            if selfId == 1 then pprint.pprintln(f(1500.0))
 
             val muPerf = solveItp(f, (-6000.0, 9000.0))
 
@@ -229,4 +187,3 @@ object EloMmr:
         } yield result
       })
     } yield results.toMap
-  }

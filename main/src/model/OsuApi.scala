@@ -2,7 +2,6 @@ package model
 
 import io.circe.*
 import io.circe.generic.semiauto.*
-import io.circe.Decoder.Result
 
 case class Match(
     id: Long,
@@ -12,7 +11,7 @@ case class Match(
 )
 
 given Decoder[Match] = new Decoder[Match] {
-  override def apply(cursor: HCursor): Result[Match] = {
+  override def apply(cursor: HCursor): Decoder.Result[Match] = {
     for {
       id <- cursor.downField("match").downField("id").as[Long]
       name <- cursor.downField("match").downField("name").as[String]
@@ -52,7 +51,7 @@ case class Beatmap(
   }
 
 given Decoder[Beatmap] = new Decoder[Beatmap] {
-  override def apply(cursor: HCursor): Result[Beatmap] = {
+  override def apply(cursor: HCursor): Decoder.Result[Beatmap] = {
     for {
       id <- cursor.downField("id").as[Long]
       setId <- cursor.downField("beatmapset_id").as[Long]
@@ -96,7 +95,7 @@ enum Mod:
       case RX => "RX"
 
 given Decoder[Mod] = new Decoder[Mod] {
-  def apply(c: HCursor): Result[Mod] = {
+  def apply(c: HCursor): Decoder.Result[Mod] = {
     c.as[String].flatMap {
       case "DT" => Right(Mod.DT)
       case "EZ" => Right(Mod.EZ)

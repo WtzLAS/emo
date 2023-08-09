@@ -2,12 +2,12 @@ import com.ocadotechnology.sttp.oauth2.Secret
 import eu.timepit.refined.collection.NonEmpty
 import lucuma.refined.*
 import model.emo.*
+import model.mmr.EloMmr
+import model.mmr.EloMmrStorage
 import service.*
 import sttp.client3.*
 import sttp.client3.httpclient.zio.HttpClientZioBackend
 import zio.*
-import model.mmr.EloMmr
-import model.mmr.EloMmrStorage
 
 object Main extends ZIOAppDefault {
   val tokenUrl = uri"https://osu.ppy.sh/oauth/token"

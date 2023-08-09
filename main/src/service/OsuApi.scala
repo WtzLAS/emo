@@ -4,8 +4,7 @@ import com.ocadotechnology.sttp.oauth2.common.Scope
 import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
-import model.*
-import model.given
+import model.{*, given}
 import sttp.client3.*
 import sttp.client3.circe.*
 import zio.*
