@@ -2,20 +2,30 @@ package model.emo
 
 import model.*
 import zio.ZIO
+import java.time.OffsetDateTime
 
 case class RatedMatch(
     id: Long,
     name: String,
-    games: Vector[RatedGame],
-    users: Map[Long, User]
+    games: Seq[RatedGame],
+    users: Map[Long, OsuUser]
 )
 
 object RatedMatch:
   def rate(using mmr.EloMmrParameters)(
-      `match`: Match
+      `match`: OsuMatch,
+      excludedUserIds: Option[Set[Long]] = None,
+      contestWeightFunc: Option[OsuGame => Option[Double]] = None
   ): ZIO[mmr.EloMmrStorage, Throwable, RatedMatch] = {
     for {
-      ratedGames <- ZIO.foreach(`match`.games)(_.rate(1.0))
+      filtered <- ZIO.succeed(
+        `match`.filterUser(u =>
+          !excludedUserIds.getOrElse(Set.empty).contains(u.id)
+        )
+      )
+      ratedGames <- ZIO.foreach(filtered.games)(g =>
+        g.rate(contestWeightFunc.getOrElse(_ => None)(g).getOrElse(1.0))
+      )
     } yield RatedMatch(
       `match`.id,
       `match`.name,
@@ -24,38 +34,42 @@ object RatedMatch:
     )
   }
 
-extension (m: Match)
-  def rate(using mmr.EloMmrParameters) =
-    RatedMatch.rate(m)
+extension (m: OsuMatch)
+  def rate(using mmr.EloMmrParameters)(
+      excludedUserIds: Option[Set[Long]] = None,
+      contestWeightFunc: Option[OsuGame => Option[Double]] = None
+  ) =
+    RatedMatch.rate(m, excludedUserIds, contestWeightFunc)
 
 case class RatedGame(
-    beatmap: Beatmap,
-    scores: Vector[RatedScore]
+    beatmap: OsuBeatmap,
+    scores: Seq[RatedScore],
+    contestWeight: Double
 )
 
 object RatedGame:
   def rate(using mmr.EloMmrParameters)(
-      game: Game,
+      game: OsuGame,
       contestWeight: Double
   ): ZIO[mmr.EloMmrStorage, Throwable, RatedGame] = {
     for {
       rawScores <- ZIO.succeed(game.scores.map(s => (s.userId, s.score)).toMap)
-      perfs <- mmr.EloMmr.updateRound(rawScores, contestWeight)
+      perfs <- mmr.EloMmr.updateRound(rawScores, contestWeight, game.endTime)
       ratedScores <- ZIO.succeed {
         game.scores.map { s =>
           val perf = perfs(s.userId)
           RatedScore(s, perf(0), perf(1), perf(2))
         }
       }
-    } yield RatedGame(game.beatmap, ratedScores)
+    } yield RatedGame(game.beatmap, ratedScores, contestWeight)
   }
 
-extension (g: Game)
+extension (g: OsuGame)
   def rate(using mmr.EloMmrParameters)(contestWeight: Double) =
     RatedGame.rate(g, contestWeight)
 
 case class RatedScore(
-    raw: Score,
+    raw: OsuScore,
     muPerf: Double,
     rating: mmr.Rating,
     delta: Double

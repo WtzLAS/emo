@@ -10,23 +10,22 @@ import sttp.client3.circe.*
 import zio.*
 
 trait OsuApi:
-  def getMatch(id: Long): ZIO[Any, Throwable, Match]
-
-  def getUser(id: Long): ZIO[Any, Throwable, User]
+  def getMatch(id: Long): ZIO[Any, Throwable, OsuMatch]
+  def getUser(id: Long): ZIO[Any, Throwable, OsuUserExtended]
 
 object OsuApi:
-  def getMatch(id: Long): ZIO[OsuApi, Throwable, Match] =
+  def getMatch(id: Long): ZIO[OsuApi, Throwable, OsuMatch] =
     ZIO.serviceWithZIO[OsuApi](_.getMatch(id))
 
-  def getUser(id: Long): ZIO[OsuApi, Throwable, User] =
+  def getUser(id: Long): ZIO[OsuApi, Throwable, OsuUserExtended] =
     ZIO.serviceWithZIO[OsuApi](_.getUser(id))
 
 case class OsuApiImpl(
     accessTokenProvider: CachingAccessTokenProvider,
     backend: SttpBackend[Task, Any]
 ) extends OsuApi {
-  override def getUser(id: Long): ZIO[Any, Throwable, User] = {
-    def apiUrl = uri"https://osu.ppy.sh/api/v2/users/$id?key=id"
+  override def getUser(id: Long): ZIO[Any, Throwable, OsuUserExtended] = {
+    def apiUrl = uri"https://osu.ppy.sh/api/v2/users/$id/osu?key=id"
     inline def scope = Some(Scope.unsafeFrom("public"))
 
     for {
@@ -41,7 +40,7 @@ case class OsuApiImpl(
       }
       result <- cache match
         case Some(value) =>
-          ZIO.fromEither(decode[User](value))
+          ZIO.fromEither(decode[OsuUserExtended](value))
         case None =>
           for {
             _ <- ZIO.logInfo(s"Fetching user $id from ppy")
@@ -58,14 +57,14 @@ case class OsuApiImpl(
                 case Right(value) =>
                   os.write.over(wd / s"$id.json", value.toString)
             }
-            result <- ZIO.fromEither(response.body.flatMap(_.as[User]))
+            result <- ZIO.fromEither(response.body.flatMap(_.as[OsuUserExtended]))
           } yield result
     } yield result
   }
 
   override def getMatch(
       id: Long
-  ): ZIO[Any, Throwable, Match] = {
+  ): ZIO[Any, Throwable, OsuMatch] = {
     def apiUrl = uri"https://osu.ppy.sh/api/v2/matches/$id"
     inline def scope = Some(Scope.unsafeFrom("public"))
 
@@ -81,7 +80,7 @@ case class OsuApiImpl(
       }
       result <- cache match
         case Some(value) =>
-          ZIO.fromEither(decode[Match](value))
+          ZIO.fromEither(decode[OsuMatch](value))
         case None =>
           for {
             _ <- ZIO.logInfo(s"Fetching match $id from ppy")
@@ -99,17 +98,7 @@ case class OsuApiImpl(
                 case Right(value) =>
                   os.write.over(wd / s"$id.json", value.toString)
             }
-            result <- ZIO.fromEither(response.body.flatMap(_.as[Match]))
-            _ <- ZIO.attemptBlocking {
-              val wd = os.pwd / "cache" / "users"
-              os.makeDir.all(wd)
-              for u <- result.users do {
-                val p = wd / s"${u.id}.json"
-                if (!os.exists(p)) {
-                  os.write.over(p, u.asJson.toString)
-                }
-              }
-            }
+            result <- ZIO.fromEither(response.body.flatMap(_.as[OsuMatch]))
           } yield result
     } yield result
   }

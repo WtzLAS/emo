@@ -22,7 +22,7 @@ extension (ratedMatch: RatedMatch)
             figure(
               cls := "image",
               img(
-                src := ratedGame.beatmap.cover
+                src := ratedGame.beatmap.beatmapset.covers.cover
               )
             )
           ),
@@ -39,6 +39,7 @@ extension (ratedMatch: RatedMatch)
               cls := "table container",
               thead(
                 tr(
+                  th("#"),
                   th("Player"),
                   th("Mods"),
                   th("Score"),
@@ -64,11 +65,13 @@ extension (ratedMatch: RatedMatch)
               ),
               tbody(
                 for (
-                  ratedScore <- ratedGame.scores
+                  (ratedScore, r) <- ratedGame.scores
                     .sortBy(_.muPerf)
                     .reverse
+                    .zipWithIndex
                 )
                   yield tr(
+                    td(s"${r + 1}"),
                     th(
                       a(
                         href := s"https://osu.ppy.sh/u/${ratedScore.raw.userId}",
@@ -82,9 +85,9 @@ extension (ratedMatch: RatedMatch)
                       f"${ratedScore.rating.mu}%.2f±${ratedScore.rating.sig}%.2f"
                     ),
                     td(
-                      if (ratedScore.delta > 0.0) {
+                      if (ratedScore.delta > 10.0) {
                         cls := "has-text-success"
-                      } else if (ratedScore.delta < 0.0) {
+                      } else if (ratedScore.delta < -10.0) {
                         cls := "has-text-danger"
                       } else {
                         cls := "has-text-grey"
@@ -162,6 +165,8 @@ extension (players: Vector[Player])
                   tr(
                     th("#"),
                     th("Player"),
+                    th("Global Rank"),
+                    th("pp"),
                     th("μ±σ")
                   )
                 ),
@@ -176,6 +181,12 @@ extension (players: Vector[Player])
                         href := s"https://osu.ppy.sh/u/${p.id}",
                         u.username
                       )
+                    ),
+                    td(
+                      s"${u.statistics.globalRank}"
+                    ),
+                    td(
+                      f"${u.statistics.pp}%.2f"
                     ),
                     td(
                       f"${p.approxPosterior.mu}%.2f±${p.approxPosterior.sig}%.2f"

@@ -8,6 +8,7 @@ import io.github.chronoscala.Imports.*
 import sttp.client3.SttpBackend
 import sttp.model.Uri
 import zio.*
+import zio.cache.*
 
 trait CachingAccessTokenProvider {
   def requestToken(
@@ -28,58 +29,19 @@ object CachingAccessTokenProvider {
 }
 
 case class CachingAccessTokenProviderImpl(
-    lookup: AccessTokenProvider[Task],
-    semaphore: Semaphore,
-    ref: Ref[
-      Option[(ClientCredentialsToken.AccessTokenResponse, OffsetDateTime)]
-    ]
+    cache: Cache[Option[
+      Scope
+    ], Throwable, (ClientCredentialsToken.AccessTokenResponse, OffsetDateTime)]
 ) extends CachingAccessTokenProvider {
-
   override def requestToken(
       scope: Option[Scope]
-  ): ZIO[Any, Throwable, ClientCredentialsToken.AccessTokenResponse] = {
-    ref.get.flatMap(_ match
-      case None => waitAndAcquire(scope)
-      case Some((response, expireTime)) =>
-        if (OffsetDateTime.now() < expireTime) {
-          ZIO.succeed(response)
-        } else {
-          waitAndAcquire(scope)
-        }
-    )
-  }
-
-  def waitAndAcquire(
-      scope: Option[Scope]
-  ): ZIO[Any, Throwable, ClientCredentialsToken.AccessTokenResponse] = {
-    semaphore.withPermit(
-      ref.get.flatMap(_ match
-        case None => acquireToken(scope)
-        case Some((response, expireTime)) =>
-          if (OffsetDateTime.now() < expireTime) {
-            ZIO.succeed(response)
-          } else {
-            acquireToken(scope)
-          }
-      )
-    )
-  }
-
-  def acquireToken(
-      scope: Option[Scope]
-  ): ZIO[Any, Throwable, ClientCredentialsToken.AccessTokenResponse] = {
-    for {
-      response <- lookup.requestToken(scope)
-      _ <- ref.set(
-        Some(
-          (
-            response,
-            OffsetDateTime.now() + response.expiresIn.toNanos.nanos
-          )
-        )
-      )
-    } yield response
-  }
+  ): ZIO[Any, Throwable, ClientCredentialsToken.AccessTokenResponse] = for {
+    cached <- cache.get(scope)
+    updated <-
+      if (cached(1) < OffsetDateTime.now()) {
+        cache.invalidateAll *> requestToken(scope)
+      } else { ZIO.succeed(cached(0)) }
+  } yield updated
 }
 
 object CachingAccessTokenProviderImpl {
@@ -95,12 +57,16 @@ object CachingAccessTokenProviderImpl {
     ZLayer {
       for {
         backend <- ZIO.service[SttpBackend[Task, Any]]
-        lookup = AccessTokenProvider[Task](tokenUrl, clientId, clientSecret)(
+        provider = AccessTokenProvider[Task](tokenUrl, clientId, clientSecret)(
           backend
         )
-        semaphore <- Semaphore.make(1)
-        ref <- Ref.make(Option.empty)
-      } yield CachingAccessTokenProviderImpl(lookup, semaphore, ref)
+        lookup = Lookup((key: Option[Scope]) =>
+          provider
+            .requestToken(key)
+            .map(res => (res, OffsetDateTime.now() + res.expiresIn.toMillis.millis))
+        )
+        cache <- Cache.make(1, 1.days, lookup)
+      } yield CachingAccessTokenProviderImpl(cache)
     }
   }
 }

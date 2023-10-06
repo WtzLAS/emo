@@ -1,9 +1,11 @@
 package model.mmr
 
+import io.github.chronoscala.Imports.*
 import util.solveItp
 import zio.ZIO
 
 import scala.math
+import java.time.Duration
 
 inline val TANH_MULTIPLIER = math.Pi / 1.7320508075688772
 
@@ -11,7 +13,7 @@ case class Rating(
     mu: Double,
     sig: Double
 ):
-  def withNoise(sigNoise: Double) = Rating(mu, math.hypot(sig, sigNoise))
+  def withNoise(sigNoise: Double) = this.copy(sig = math.hypot(sig, sigNoise))
   def toTanhTerm = {
     val w = TANH_MULTIPLIER / sig
     TanhTerm(mu, w * 0.5, w)
@@ -32,7 +34,8 @@ case class Player(
     id: Long,
     normalFactor: Rating,
     logisticFactors: Vector[TanhTerm],
-    approxPosterior: Rating
+    approxPosterior: Rating,
+    lastUpdate: OffsetDateTime
 ):
   def truncateHistory(maxHistory: Int) = {
     val (left, right) =
@@ -46,10 +49,10 @@ case class Player(
           math.sqrt(1.0 / (wN + wL))
         )
       })
-    Player(id, normalFactor1, right, approxPosterior)
+    this.copy(normalFactor = normalFactor1)
   }
 
-  def updateRating(performance: Rating) = {
+  def updateRating(performance: Rating, updateTime: OffsetDateTime) = {
     val logisticFactors1 = logisticFactors :+ performance.toTanhTerm
     val wN = math.pow(normalFactor.sig, -2.0)
     val mu1 = robustAverage(logisticFactors1, -normalFactor.mu * wN, wN)
@@ -57,7 +60,11 @@ case class Player(
       1.0 / (math.pow(approxPosterior.sig, -2.0) + math
         .pow(performance.sig, -2.0))
     )
-    Player(id, normalFactor, logisticFactors1, Rating(mu1, sig1))
+    this.copy(
+      logisticFactors = logisticFactors1,
+      approxPosterior = Rating(mu1, sig1),
+      lastUpdate = updateTime
+    )
   }
 
   def addNoise(sigNoise: Double, transferSpeed: Double) = {
@@ -76,13 +83,16 @@ case class Player(
     val logisticFactors1 = logisticFactors.map(term =>
       TanhTerm(term.mu, term.wArg, term.wOut * transfer * decay)
     )
-
-    Player(id, normalFactor1, logisticFactors1, approxPosterior1)
+    this.copy(
+      normalFactor = normalFactor1,
+      logisticFactors = logisticFactors1,
+      approxPosterior = approxPosterior1
+    )
   }
 
 object Player:
   def withRating(id: Long, rating: Rating) =
-    Player(id, rating, Vector.empty, rating)
+    Player(id, rating, Vector.empty, rating, OffsetDateTime.now())
 
 def robustAverage(
     terms: Iterable[TanhTerm],
@@ -99,24 +109,31 @@ case class EloMmrParameters(
     muInit: Double,
     sigInit: Double,
     maxHistory: Int,
-    weightLimit: Double
+    weightLimit: Double,
+    driftPerSec: Double
 ):
   def sigPerfAndDrift(contestWeight: Double) = {
     val scaledContestWeight = contestWeight * weightLimit
     val sigPerf = math.sqrt(1.0 + 1.0 / scaledContestWeight) * sigLimit
-    val sigDrift = math.sqrt(scaledContestWeight * math.pow(sigLimit, 2.0))
-    (sigPerf, sigDrift)
+    val sigDriftSq = scaledContestWeight * math.pow(sigLimit, 2.0)
+    (sigPerf, sigDriftSq)
   }
 
 object EloMmrParameters:
   def default =
-    EloMmrParameters(80.0, 1.0, 1500.0, 350.0, Int.MaxValue - 1, 0.2)
+    EloMmrParameters(80.0, 1.0, 1500.0, 350.0, Int.MaxValue - 1, 0.2, 0)
 
 object EloMmr:
   def updateRound(using
       params: EloMmrParameters
-  )(scores: Map[Long, Long], contestWeight: Double) =
-    val (sigPerf, sigDrift) = params.sigPerfAndDrift(contestWeight)
+  )(
+      scores: Map[Long, Long],
+      contestWeight: Double,
+      updateTime: OffsetDateTime
+  ) =
+    val (sigPerf, discreteDrift) = params.sigPerfAndDrift(contestWeight)
+    val continuousDrift = params.driftPerSec
+    val sigDrift = math.sqrt(discreteDrift + continuousDrift)
     for {
       players1 <- ZIO
         .collectAllPar(
@@ -128,7 +145,17 @@ object EloMmr:
                   Player.withRating(id, Rating(params.muInit, params.sigInit))
                 )(identity)
               )
-              .map(_.addNoise(sigDrift, params.transferSpeed))
+              .map(p =>
+                p.addNoise(
+                  math.sqrt(
+                    discreteDrift + params.driftPerSec * (Duration
+                      .between(p.lastUpdate, updateTime)
+                      .toMillis()
+                      .max(0) / 1000.0)
+                  ),
+                  params.transferSpeed
+                )
+              )
               .map(p => (p.id, p))
           )
         )
@@ -171,7 +198,7 @@ object EloMmr:
             (
               self
                 .truncateHistory(params.maxHistory + 1)
-                .updateRating(Rating(muPerf, sigPerf)),
+                .updateRating(Rating(muPerf, sigPerf), updateTime),
               muPerf
             )
           }

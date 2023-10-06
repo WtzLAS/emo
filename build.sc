@@ -1,20 +1,21 @@
 import mill._, scalalib._
 
 object V {
-  def zio = "2.0.15"
-  def zioLogging = "2.1.13"
-  def sttp = "3.8.15"
+  def zio = "2.0.18"
+  def zioLogging = "2.1.14"
+  def sttp = "3.9.0"
   def sttpOauth2 = "0.17.0-RC1"
-  def lucumaRefined = "0.1.1"
-  def circe = "0.14.5"
+  def lucumaRefined = "0.1.2"
+  def circe = "0.14.6"
   def pprint = "0.8.1"
-  def chronoscala = "2.0.8"
+  def chronoscala = "2.0.9"
   def scalaTags = "0.12.0"
   def osLib = "0.9.1"
+  def zioCache = "0.2.3"
 }
 
 object main extends ScalaModule {
-  def scalaVersion = "3.3.0"
+  def scalaVersion = "3.3.1"
 
   def ivyDeps = Agg(
     ivy"dev.zio::zio:${V.zio}",
@@ -31,6 +32,7 @@ object main extends ScalaModule {
     ivy"com.lihaoyi::pprint:${V.pprint}",
     ivy"io.github.chronoscala::chronoscala:${V.chronoscala}",
     ivy"com.lihaoyi::scalatags:${V.scalaTags}",
-    ivy"com.lihaoyi::os-lib:${V.osLib}"
+    ivy"com.lihaoyi::os-lib:${V.osLib}",
+    ivy"dev.zio::zio-cache:${V.zioCache}"
   )
 }
