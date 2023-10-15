@@ -132,8 +132,6 @@ object EloMmr:
       updateTime: OffsetDateTime
   ) =
     val (sigPerf, discreteDrift) = params.sigPerfAndDrift(contestWeight)
-    val continuousDrift = params.driftPerSec
-    val sigDrift = math.sqrt(discreteDrift + continuousDrift)
     for {
       players1 <- ZIO
         .collectAllPar(

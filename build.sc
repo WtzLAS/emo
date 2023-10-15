@@ -12,6 +12,7 @@ object V {
   def scalaTags = "0.12.0"
   def osLib = "0.9.1"
   def zioCache = "0.2.3"
+  def zioConfig = "4.0.0-RC16"
 }
 
 object main extends ScalaModule {
@@ -33,6 +34,9 @@ object main extends ScalaModule {
     ivy"io.github.chronoscala::chronoscala:${V.chronoscala}",
     ivy"com.lihaoyi::scalatags:${V.scalaTags}",
     ivy"com.lihaoyi::os-lib:${V.osLib}",
-    ivy"dev.zio::zio-cache:${V.zioCache}"
+    ivy"dev.zio::zio-cache:${V.zioCache}",
+    ivy"dev.zio::zio-config:${V.zioConfig}",
+    ivy"dev.zio::zio-config-magnolia:${V.zioConfig}",
+    ivy"dev.zio::zio-config-typesafe:${V.zioConfig}"
   )
 }

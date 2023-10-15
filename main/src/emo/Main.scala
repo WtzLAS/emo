@@ -17,10 +17,10 @@ import zio.Random
 
 object Main extends ZIOAppDefault {
   val tokenUrl = uri"https://osu.ppy.sh/oauth/token"
-  val clientId = "25015".refined[NonEmpty]
-  val clientSecret = Secret("h6Gbz9ein67g4lii2PjOFX87lxqSOGzPGTmr00Gp")
+  val clientId = "114514".refined[NonEmpty]
+  val clientSecret = Secret("old ones in the git history have been revoked")
 
-  def run = program.provide(
+  def run = program3.provide(
     HttpClientZioBackend.layer(),
     CachingAccessTokenProviderImpl.layer(tokenUrl, clientId, clientSecret),
     OsuApiImpl.layer(),
@@ -43,58 +43,70 @@ object Main extends ZIOAppDefault {
   //   89622673, 89635728, 89646086, 89650373, 89669002, 89671085, 89671687,
   //   89673897, 89676440, 89677184, 89679656, 89682748, 89683718, 89685117,
   //   89731229, 89733422, 89733807, 89750968).sorted
+  val ids = Vector(110694420, 110695711, 110697447, 110699305, 110709294,
+    110710108, 110711279, 110712641, 110722240, 110723364, 110733145, 110733930,
+    110735100, 110742023, 110759389, 110760868, 110762615, 110774513, 110776003,
+    110794189, 110797184, 110811944, 110846345, 110875660, 110877994, 110879510,
+    110885987, 110890591, 110891734, 110893521).sorted
 
-  val banUserIds = Set(15184992L)
+  val beatmapIds = Vector(3682179, 4241682, 2946166, 2064271, 2067426, 2946442,
+    756508, 1863256, 2911393, 3326709).map(_.toLong)
 
-  val targetTime = OffsetDateTime.parse("2023-10-06T14:00:00+00:00")
+  val banUserIds = Set(15184992L, 12166015L)
+
+  val startMatchId = 110891734
+  val targetTime = OffsetDateTime.parse("2023-10-15T14:00:00+00:00")
 
   given model.mmr.EloMmrParameters = model.mmr.EloMmrParameters.default
 
-  def program = for {
-    // m <- OsuApi.getMatch(110742023)
-    // _ <- ZIO.succeed(pprint.pprintln(m))
-    // _ <- ZIO.foreach(ids) { matchId =>
-    //   for {
-    //     `match` <- OsuApi.getMatch(matchId)
-    //     result <- `match`.rate
-    //     _ <- ZIO.attempt {
-    //       val wd = os.pwd / "cache" / "results" / "matches"
-    //       os.makeDir.all(wd)
-    //       os.write.over(wd / s"$matchId.html", result.toPage)
-    //     }
-    //   } yield ()
-    // }
-    // _ <- ZIO.iterate((110759390, 1))((id, delta) => id <= 110735106 + 100000)(
-    //   (id, delta) =>
-    //     (for {
-    //       m <- OsuApi.getMatch(id)
-    //       _ <-
-    //         if (m.name.startsWith("KIT:")) {
-    //           ZIO.logError(s"Found $id = ${m.name}") *> ZIO.fail(1)
-    //         } else { ZIO.unit }
-    //       _ <- ZIO.sleep(Duration.fromMillis(100))
-    //       newS <-
-    //         if (m.startTime < targetTime - 1.hours) {
-    //           ZIO.succeed((id + (delta * 2).min(500), (delta * 2).min(500)))
-    //         } else if (m.startTime > targetTime + 1.hours) {
-    //           ZIO.succeed((id - delta / 2, delta / 2))
-    //         } else if (m.startTime < targetTime) {
-    //           ZIO.succeed((id + 1, 1))
-    //         } else {
-    //           ZIO.succeed((id - 1, 1))
-    //         }
-    //     } yield newS).catchAll {
-    //       case e: Int => ZIO.fail(e)
-    //       case _ =>
-    //         Random.nextBoolean.map(b =>
-    //           (
-    //             id + (if (b) { 1 }
-    //                   else { -1 }),
-    //             1
-    //           )
-    //         )
-    //     }
-    // )
+  val program1 = for {
+    _ <- ZIO.foreach(ids) { matchId =>
+      for {
+        `match` <- OsuApi.getMatch(matchId)
+        result <- `match`.rate()
+        _ <- ZIO.attempt {
+          val wd = os.pwd / "cache" / "results" / "matches"
+          os.makeDir.all(wd)
+          os.write.over(wd / s"$matchId.html", result.toPage)
+        }
+      } yield ()
+    }
+  } yield ()
+
+  val program2 = for {
+    _ <- ZIO.iterate((startMatchId + 1, 1))((id, delta) =>
+      id <= startMatchId + 100000
+    )((id, delta) =>
+      (for {
+        m <- OsuApi.getMatch(id)
+        _ <-
+          if (m.name.startsWith("KIT")) {
+            ZIO.logError(s"Found $id = ${m.name}") *> ZIO.fail(1)
+          } else { ZIO.unit }
+        _ <- ZIO.sleep(Duration.fromMillis(100))
+        newS <-
+          if (m.startTime < targetTime - 30.minutes) {
+            ZIO.succeed((id + (delta * 2).min(200), (delta * 2).min(200)))
+          } else if (m.startTime < targetTime) {
+            ZIO.succeed((id + 1, 1))
+          } else {
+            ZIO.succeed((id - 1, 1))
+          }
+      } yield newS).catchAll {
+        case e: Int => ZIO.fail(e)
+        case _ =>
+          Random.nextBoolean.map(b =>
+            (
+              id + (if (b) { 1 }
+                    else { -1 }),
+              1
+            )
+          )
+      }
+    )
+  } yield ()
+
+  val program3 = for {
     tmatch <- ZIO
       .collectAll(ids.map(OsuApi.getMatch(_)))
       .map(mas =>
